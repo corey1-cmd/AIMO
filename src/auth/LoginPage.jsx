@@ -14,8 +14,13 @@
  * 이 페이지에 진입하기 전에 이미 처리되어 있습니다.
  * ═══════════════════════════════════════════════════════════════ */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { signInWithGoogle } from './supabase.js';
+import {
+  detectInAppBrowser,
+  tryOpenInExternalBrowser,
+  getGuidanceMessage,
+} from './inAppBrowser.js';
 
 const PALETTE = {
   primary: '#2828cd',
@@ -29,6 +34,13 @@ const PALETTE = {
 export function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [inApp, setInApp] = useState(null);
+
+  // 페이지 진입 시 인앱 브라우저 감지 (1회)
+  useEffect(() => {
+    const detected = detectInAppBrowser();
+    if (detected) setInApp(detected);
+  }, []);
 
   const handleSignIn = async () => {
     if (busy) return;
@@ -36,12 +48,15 @@ export function LoginPage() {
     setError(null);
     try {
       await signInWithGoogle();
-      // OAuth 리디렉션이 발생하므로 여기 이후는 보통 실행되지 않음
-      // 만약 redirect 가 안 되고 fail 도 throw 되지 않으면 다시 활성화
     } catch (e) {
       setBusy(false);
       setError(e?.message || '알 수 없는 오류가 발생했습니다');
     }
+  };
+
+  const handleOpenExternal = () => {
+    // 카카오톡 우회 트릭. 성공 시 페이지 자체가 외부 브라우저로 이동.
+    tryOpenInExternalBrowser();
   };
 
   return (
@@ -53,55 +68,107 @@ export function LoginPage() {
         }
       `}</style>
       <div style={styles.shell}>
-      <div style={styles.card}>
-        <div style={styles.brandBlock}>
-          <h1 style={styles.brand}>détente</h1>
-          <p style={styles.tagline}>당신의 작은 데탕트.</p>
-        </div>
+        <div style={styles.card}>
+          <div style={styles.brandBlock}>
+            <h1 style={styles.brand}>détente</h1>
+            <p style={styles.tagline}>당신의 작은 데탕트.</p>
+          </div>
 
-        <div style={styles.actionBlock}>
-          <button
-            onClick={handleSignIn}
-            disabled={busy}
-            style={{
-              ...styles.googleBtn,
-              opacity: busy ? 0.65 : 1,
-              cursor: busy ? 'wait' : 'pointer',
-            }}
-            aria-label="Google 계정으로 로그인"
-          >
-            {busy ? (
-              <span style={styles.btnContent}>
-                <Spinner />
-                <span>Google 로그인 진행 중...</span>
-              </span>
-            ) : (
-              <span style={styles.btnContent}>
-                <GoogleLogo />
-                <span>Google로 시작하기</span>
-              </span>
-            )}
-          </button>
-
-          {error && (
-            <div role="alert" style={styles.errorBox}>
-              로그인에 실패했습니다: {error}
-            </div>
+          {inApp ? (
+            <InAppBrowserNotice browser={inApp} onOpenExternal={handleOpenExternal} />
+          ) : (
+            <NormalLoginBlock
+              busy={busy}
+              error={error}
+              onSignIn={handleSignIn}
+            />
           )}
 
-          <p style={styles.note}>
-            기록은 안전하게 보관되며,
-            <br />
-            여러 기기에서 이어서 쓸 수 있어요.
-          </p>
-        </div>
-
-        <div style={styles.footer}>
-          <span>© détente</span>
+          <div style={styles.footer}>
+            <span>© détente</span>
+          </div>
         </div>
       </div>
-    </div>
     </>
+  );
+}
+
+/* ─── 정상 로그인 블록 (인앱 브라우저 아닐 때) ──────────────── */
+
+function NormalLoginBlock({ busy, error, onSignIn }) {
+  return (
+    <div style={styles.actionBlock}>
+      <button
+        onClick={onSignIn}
+        disabled={busy}
+        style={{
+          ...styles.googleBtn,
+          opacity: busy ? 0.65 : 1,
+          cursor: busy ? 'wait' : 'pointer',
+        }}
+        aria-label="Google 계정으로 로그인"
+      >
+        {busy ? (
+          <span style={styles.btnContent}>
+            <Spinner />
+            <span>Google 로그인 진행 중...</span>
+          </span>
+        ) : (
+          <span style={styles.btnContent}>
+            <GoogleLogo />
+            <span>Google로 시작하기</span>
+          </span>
+        )}
+      </button>
+
+      {error && (
+        <div role="alert" style={styles.errorBox}>
+          로그인에 실패했습니다: {error}
+        </div>
+      )}
+
+      <p style={styles.note}>
+        기록은 안전하게 보관되며,
+        <br />
+        여러 기기에서 이어서 쓸 수 있어요.
+      </p>
+    </div>
+  );
+}
+
+/* ─── 인앱 브라우저 안내 블록 ────────────────────────────────── */
+
+function InAppBrowserNotice({ browser, onOpenExternal }) {
+  const guide = getGuidanceMessage(browser);
+
+  return (
+    <div style={styles.actionBlock}>
+      <div style={styles.warnIcon} aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="#f59f00" strokeWidth="2" />
+          <path d="M12 7v6" stroke="#f59f00" strokeWidth="2" strokeLinecap="round" />
+          <circle cx="12" cy="16.5" r="1.2" fill="#f59f00" />
+        </svg>
+      </div>
+
+      <h2 style={styles.guideTitle}>{guide.title}</h2>
+      <p style={styles.guideBody}>{guide.body}</p>
+
+      {guide.autoFix && guide.primaryAction && (
+        <button onClick={onOpenExternal} style={styles.primaryBtn}>
+          {guide.primaryAction}
+        </button>
+      )}
+
+      {!guide.autoFix && (
+        <div style={styles.urlBox}>
+          <div style={styles.urlBoxLabel}>또는 아래 주소를 직접 복사해서 브라우저에 붙여넣으세요</div>
+          <code style={styles.urlBoxCode}>
+            {typeof window !== 'undefined' ? window.location.origin : 'https://aimo-seven.vercel.app'}
+          </code>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -231,6 +298,59 @@ const styles = {
     textAlign: 'center',
     margin: 0,
     lineHeight: 1.55,
+  },
+  warnIcon: {
+    display: 'flex',
+    justifyContent: 'center',
+  },
+  guideTitle: {
+    fontSize: 17,
+    fontWeight: 600,
+    margin: 0,
+    color: PALETTE.text,
+    textAlign: 'center',
+    lineHeight: 1.4,
+  },
+  guideBody: {
+    fontSize: 14,
+    color: PALETTE.textMuted,
+    margin: 0,
+    lineHeight: 1.6,
+    textAlign: 'center',
+  },
+  primaryBtn: {
+    width: '100%',
+    padding: '14px 18px',
+    fontSize: 15,
+    fontWeight: 500,
+    background: PALETTE.primary,
+    color: 'white',
+    border: 'none',
+    borderRadius: 10,
+    cursor: 'pointer',
+    transition: 'background 0.15s',
+  },
+  urlBox: {
+    width: '100%',
+    padding: '12px 14px',
+    background: PALETTE.bg,
+    border: `1px solid ${PALETTE.border}`,
+    borderRadius: 8,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  urlBoxLabel: {
+    fontSize: 12,
+    color: PALETTE.textMuted,
+    lineHeight: 1.5,
+  },
+  urlBoxCode: {
+    fontSize: 13,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    color: PALETTE.text,
+    wordBreak: 'break-all',
+    background: 'transparent',
   },
   footer: {
     textAlign: 'center',
