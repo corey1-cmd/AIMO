@@ -4,21 +4,15 @@
  * Hard Gate 로그인 페이지.
  * status === 'unauthenticated' 일 때 App.jsx 가 이 컴포넌트만 렌더합니다.
  *
- * 2026-04-26 patch-v6a-hardgate-v2 → v6a-hardgate-v3 (시각 시스템 교정):
- *   시니어 2 종합 검토에 따라 PALETTE 를 Sprout 디자인 가이드로 전면 교체.
- *   - 색상: 블루-퍼플 (#2828cd) → deep forest (#00522d)
- *   - 폰트: Cormorant Garamond → Plus Jakarta Sans 800 italic
- *   - shadow: 0 8px 30px rgba(40,40,205,0.10) → Sprout ambient
- *   - 배경: 보라빛 화이트 → 민트 화이트 그라디언트
+ * 디자인: Sprout 가이드 (deep forest #00522d). 디자이너 Lenu §5 + product context §7-1.
+ * Plus Jakarta Sans 800 italic 으로 브랜드명 표현. 카드 fade-in + 버튼 hover lift.
  *
- * 동작 로직은 한 줄도 변경되지 않음. 시각 토큰만 교체.
+ * 인앱 브라우저 처리: KAKAOTALK / NAVER / Instagram / FB / Line / Daum / Android WebView
+ * 감지 시 별도 안내 화면. 카카오톡은 ?openExternalBrowser=1 트릭으로 자동 우회.
  *
- * 디자인 원칙 (디자이너 Lenu §5 + product context §7-1 일치):
- *   - 단일 큰 Google 버튼이 시각적 중심
- *   - 브랜딩(détente) 이 위에 배치되어 정체성 노출
- *   - 가치 제안 한 줄
- *   - 버튼 클릭 시 즉시 spinner 로 OAuth 대기시간 부담 완화
- *   - flash 방지: AuthProvider 의 'loading' 상태에서 이 페이지 진입 자체 차단
+ * patch-v6a-hardgate-v3 (시니어 2 디자인 수정):
+ *   PALETTE 교체 + 카드 shadow Sprout ambient 토큰 + Plus Jakarta Sans 인라인 임포트
+ *   동작 로직 변경 없음. 시각 토큰만 교체.
  * ═══════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect } from 'react';
@@ -29,23 +23,19 @@ import {
   getGuidanceMessage,
 } from './inAppBrowser.js';
 
-/* Sprout 디자인 가이드 토큰 (constants.js T 와 일치). */
+/* ─── Sprout 디자인 토큰 ──────────────────────────────────────── */
 const PALETTE = {
-  primary: '#00522d',        // deep forest — 메인 CTA
+  primary: '#00522d',
   primaryHover: '#003d22',
-  accent2: '#466557',        // sage green — 보조
-  mint: '#c5e8d6',           // secondary container
-  bg: '#f6fbf4',             // 메인 배경
-  bgCard: '#ffffff',         // 카드 표면
-  bgGradientEnd: '#ebefe8',  // 그라디언트 끝점 (subtle)
-  text: '#181d19',           // 본문
-  textMuted: '#6f7a70',      // 캡션
+  bgFrom: '#f6fbf4',
+  bgTo: '#ebefe8',
+  text: '#181d19',
+  textMuted: '#6f7a70',
   border: 'rgba(45, 75, 62, 0.10)',
-  shadowAmbient: '0 4px 24px rgba(45, 75, 62, 0.05)',
-  shadowRaised: '0 8px 32px rgba(45, 75, 62, 0.12)',
+  cardShadow: '0 4px 24px rgba(45, 75, 62, 0.05)',
+  ctaShadow: '0 4px 24px rgba(45, 75, 62, 0.18)',
+  warnAccent: '#466557',
 };
-
-const FONT_STACK = "'Plus Jakarta Sans','Noto Sans KR','Pretendard',-apple-system,BlinkMacSystemFont,sans-serif";
 
 export function LoginPage() {
   const [busy, setBusy] = useState(false);
@@ -77,14 +67,22 @@ export function LoginPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,800&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,800;1,800&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+
         @keyframes detente-spin {
           from { transform: rotate(0deg); }
           to   { transform: rotate(360deg); }
         }
-        @keyframes detente-fade-in {
+        @keyframes detente-card-in {
           from { opacity: 0; transform: translateY(8px); }
           to   { opacity: 1; transform: translateY(0); }
+        }
+        .detente-google-btn:hover:not(:disabled) {
+          box-shadow: 0 4px 16px rgba(45, 75, 62, 0.12);
+          transform: translateY(-1px);
+        }
+        .detente-primary-btn:hover:not(:disabled) {
+          background: ${PALETTE.primaryHover};
         }
       `}</style>
       <div style={styles.shell}>
@@ -119,21 +117,13 @@ function NormalLoginBlock({ busy, error, onSignIn }) {
   return (
     <div style={styles.actionBlock}>
       <button
+        className="detente-google-btn"
         onClick={onSignIn}
         disabled={busy}
         style={{
           ...styles.googleBtn,
           opacity: busy ? 0.65 : 1,
           cursor: busy ? 'wait' : 'pointer',
-        }}
-        onMouseEnter={(e) => {
-          if (busy) return;
-          e.currentTarget.style.boxShadow = PALETTE.shadowRaised;
-          e.currentTarget.style.transform = 'translateY(-1px)';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
-          e.currentTarget.style.transform = 'translateY(0)';
         }}
         aria-label="Google 계정으로 로그인"
       >
@@ -174,9 +164,9 @@ function InAppBrowserNotice({ browser, onOpenExternal }) {
     <div style={styles.actionBlock}>
       <div style={styles.warnIcon} aria-hidden="true">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="10" stroke={PALETTE.accent2} strokeWidth="2" />
-          <path d="M12 7v6" stroke={PALETTE.accent2} strokeWidth="2" strokeLinecap="round" />
-          <circle cx="12" cy="16.5" r="1.2" fill={PALETTE.accent2} />
+          <circle cx="12" cy="12" r="10" stroke={PALETTE.warnAccent} strokeWidth="2" />
+          <path d="M12 7v6" stroke={PALETTE.warnAccent} strokeWidth="2" strokeLinecap="round" />
+          <circle cx="12" cy="16.5" r="1.2" fill={PALETTE.warnAccent} />
         </svg>
       </div>
 
@@ -185,10 +175,9 @@ function InAppBrowserNotice({ browser, onOpenExternal }) {
 
       {guide.autoFix && guide.primaryAction && (
         <button
+          className="detente-primary-btn"
           onClick={onOpenExternal}
           style={styles.primaryBtn}
-          onMouseEnter={(e) => { e.currentTarget.style.background = PALETTE.primaryHover; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = PALETTE.primary; }}
         >
           {guide.primaryAction}
         </button>
@@ -209,7 +198,6 @@ function InAppBrowserNotice({ browser, onOpenExternal }) {
 /* ─── 작은 컴포넌트들 ─────────────────────────────────────────── */
 
 function GoogleLogo() {
-  // Google 공식 G 로고 SVG (Google Brand Resource Center 기준 — 변경 금지)
   return (
     <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
       <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" />
@@ -245,31 +233,31 @@ function Spinner() {
   );
 }
 
-/* ─── inline styles (Sprout 토큰 적용) ─────────────────────── */
+/* ─── styles ─────────────────────────────────────────────────── */
 
 const styles = {
   shell: {
     minHeight: '100vh',
-    background: `linear-gradient(135deg, ${PALETTE.bg} 0%, ${PALETTE.bgGradientEnd} 100%)`,
+    background: `linear-gradient(135deg, ${PALETTE.bgFrom} 0%, ${PALETTE.bgTo} 100%)`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     padding: '24px',
-    fontFamily: FONT_STACK,
+    fontFamily: '"Plus Jakarta Sans", "Noto Sans KR", system-ui, -apple-system, "Segoe UI", sans-serif',
     color: PALETTE.text,
   },
   card: {
-    background: PALETTE.bgCard,
+    background: 'white',
     borderRadius: 24,
     padding: '48px 36px 32px',
     width: '100%',
     maxWidth: 420,
-    boxShadow: PALETTE.shadowAmbient,
+    boxShadow: PALETTE.cardShadow,
     border: `1px solid ${PALETTE.border}`,
     display: 'flex',
     flexDirection: 'column',
     gap: 36,
-    animation: 'detente-fade-in 380ms ease-out both',
+    animation: 'detente-card-in 380ms ease-out',
   },
   brandBlock: {
     textAlign: 'center',
@@ -278,23 +266,19 @@ const styles = {
     gap: 6,
   },
   brand: {
-    // Sprout 가이드 일관: Plus Jakarta Sans 800 italic + deep forest
-    // 메인 페이지의 .nav-logo (22px 800 detente) 와 동일 톤, 크기만 hero 사이즈
-    fontSize: 42,
+    fontSize: 38,
     fontWeight: 800,
     fontStyle: 'italic',
-    letterSpacing: '-0.025em',
+    fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
+    letterSpacing: '-0.5px',
     margin: 0,
     color: PALETTE.primary,
-    fontFamily: FONT_STACK,
-    lineHeight: 1.1,
   },
   tagline: {
     fontSize: 14,
     color: PALETTE.textMuted,
     margin: 0,
-    letterSpacing: '0.02em',
-    fontWeight: 500,
+    letterSpacing: '0.2px',
   },
   actionBlock: {
     display: 'flex',
@@ -306,16 +290,15 @@ const styles = {
     width: '100%',
     padding: '14px 18px',
     fontSize: 15,
-    fontWeight: 600,
-    background: PALETTE.bgCard,
+    fontWeight: 500,
+    fontFamily: 'inherit',
+    background: 'white',
     color: '#3c4043',
     border: '1px solid #dadce0',
-    borderRadius: 9999,  // Sprout pill CTA
+    borderRadius: 9999,
     cursor: 'pointer',
-    transition: 'box-shadow 200ms, transform 200ms, border-color 200ms',
-    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-    fontFamily: FONT_STACK,
-    letterSpacing: '0.01em',
+    transition: 'box-shadow 200ms ease, transform 200ms ease',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
   },
   btnContent: {
     display: 'flex',
@@ -328,7 +311,7 @@ const styles = {
     padding: '10px 14px',
     background: '#fff5f5',
     border: '1px solid #ffd0d0',
-    borderRadius: 12,
+    borderRadius: 8,
     color: '#c92a2a',
     fontSize: 13,
     lineHeight: 1.5,
@@ -346,12 +329,11 @@ const styles = {
   },
   guideTitle: {
     fontSize: 17,
-    fontWeight: 700,
+    fontWeight: 600,
     margin: 0,
     color: PALETTE.text,
     textAlign: 'center',
     lineHeight: 1.4,
-    letterSpacing: '-0.005em',
   },
   guideBody: {
     fontSize: 14,
@@ -364,21 +346,20 @@ const styles = {
     width: '100%',
     padding: '14px 18px',
     fontSize: 15,
-    fontWeight: 700,
+    fontWeight: 500,
+    fontFamily: 'inherit',
     background: PALETTE.primary,
     color: 'white',
     border: 'none',
     borderRadius: 9999,
     cursor: 'pointer',
-    transition: 'background 200ms, transform 200ms',
-    fontFamily: FONT_STACK,
-    boxShadow: '0 4px 24px rgba(45, 75, 62, 0.18)',
-    letterSpacing: '0.01em',
+    transition: 'background 200ms ease',
+    boxShadow: PALETTE.ctaShadow,
   },
   urlBox: {
     width: '100%',
     padding: '12px 14px',
-    background: PALETTE.bg,
+    background: PALETTE.bgFrom,
     border: `1px solid ${PALETTE.border}`,
     borderRadius: 12,
     display: 'flex',
@@ -402,8 +383,5 @@ const styles = {
     fontSize: 11,
     color: PALETTE.textMuted,
     opacity: 0.6,
-    letterSpacing: '0.05em',
-    textTransform: 'uppercase',
-    fontWeight: 600,
   },
 };

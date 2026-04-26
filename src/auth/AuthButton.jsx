@@ -1,40 +1,35 @@
 /* ═══════════════════════════════════════════════════════════════
  * src/auth/AuthButton.jsx
  *
- * NavBar 우측에 표시되는 인증 상태 버튼.
+ * Nav 에 사용할 로그인/로그아웃 버튼.
  * AuthProvider 의 status 를 보고 적절한 UI 렌더.
  *
- * 2026-04-26 patch-v6a-hardgate-v3 (시각 시스템 교정):
- *   시니어 2 종합 검토에 따라 색상 토큰을 Sprout 디자인 가이드로 교체.
- *   - var(--brand-primary, #2828cd) → Sprout deep forest (#00522d)
- *   - 로그아웃 버튼: 보더 있는 ghost → 작은 텍스트 + hover 시 부드럽게 강조
- *     (NavBar 시각 무게 감소, "로그아웃 하라" 가 아니라 "필요하면 누르라")
- *   - 로그인 버튼: pill CTA + Sprout primary
+ * loading 상태에서는 빈 placeholder (너비만 확보) 를 반환합니다.
+ * 이것이 로그인 여부 확정 전에 "로그인" 또는 "로그아웃" 버튼이
+ * 잠깐 번쩍 뜨는 flash 를 막는 핵심 부분입니다.
  *
- * Hard Gate 환경에서는 비로그인 사용자가 NavBar 자체에 도달하지 못하므로
- * '로그인' 분기는 fallback safety 용입니다 (Hard Gate 미적용 상태로 회귀할 때).
- *
- * loading 상태에서는 빈 placeholder (너비만 확보) 를 반환하여 flash 방지.
+ * patch-v6a-hardgate-v3 (시니어 2 디자인 수정):
+ *   - inline #2828cd 직접 지정 → Sprout #00522d
+ *   - 로그아웃 버튼: ghost 보더 → hover 시에만 mint tint (NavBar 시각 무게↓)
+ *   - 로그인 버튼: 사각 6px → pill 9999 + ambient shadow
+ *   - 200ms transition 추가
  * ═══════════════════════════════════════════════════════════════ */
 
+import { useState } from 'react';
 import { useAuth } from './AuthProvider.jsx';
 import { signInWithGoogle, signOut } from './supabase.js';
-import { useState } from 'react';
 
-/* Sprout 디자인 가이드 토큰 — LoginPage 와 동일 값 유지 */
-const PALETTE = {
-  primary: '#00522d',
-  primaryHover: '#003d22',
-  text: '#181d19',
-  textMuted: '#6f7a70',
-  border: 'rgba(45, 75, 62, 0.18)',
-  borderHover: 'rgba(45, 75, 62, 0.35)',
-};
+/* ─── Sprout 토큰 (LoginPage 와 동일) ─────────────────────────── */
+const PRIMARY = '#00522d';
+const PRIMARY_HOVER = '#003d22';
+const MINT_TINT = 'rgba(0, 82, 45, 0.06)';   // hover 시 잔잔한 강조
+const TEXT_MUTED = '#6f7a70';
+const CTA_SHADOW = '0 4px 24px rgba(45, 75, 62, 0.18)';
 
 export function AuthButton() {
   const { status, user } = useAuth();
   const [busy, setBusy] = useState(false);
-  const [hover, setHover] = useState(false);
+  const [hovered, setHovered] = useState(false);
 
   // Flash 방지: loading 중에는 자리만 잡아두고 텍스트는 표시 안 함.
   if (status === 'loading') {
@@ -76,57 +71,59 @@ export function AuthButton() {
     }
   };
 
-  /* ─── 로그인 상태: 작은 텍스트 버튼 (NavBar 시각 무게 최소화) ─── */
+  /* ─── 인증된 사용자: 로그아웃 버튼 ───────────────────────────
+   * NavBar 의 시각 무게를 줄이기 위해 hover 시에만 mint tint 표시.
+   * 평상시에는 텍스트만 보이는 ghost 형태. */
   if (status === 'authenticated' && user) {
     return (
       <button
         onClick={handleSignOut}
         disabled={busy}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         style={{
           padding: '6px 14px',
           fontSize: 13,
-          fontWeight: 600,
-          background: hover ? 'rgba(45, 75, 62, 0.06)' : 'transparent',
-          border: `1px solid ${hover ? PALETTE.borderHover : PALETTE.border}`,
-          color: PALETTE.text,
-          borderRadius: 9999,    // pill — Sprout 가이드 일관
+          fontFamily: 'inherit',
+          fontWeight: 500,
+          background: hovered ? MINT_TINT : 'transparent',
+          color: hovered ? PRIMARY : TEXT_MUTED,
+          border: 'none',
+          borderRadius: 9999,
           cursor: busy ? 'not-allowed' : 'pointer',
           opacity: busy ? 0.5 : 1,
-          transition: 'background 200ms, border-color 200ms',
-          letterSpacing: '0.01em',
-          fontFamily: 'inherit',  // NavBar 폰트 상속 (Plus Jakarta Sans)
+          transition: 'background 200ms ease, color 200ms ease',
         }}
         title={user.email}
-        aria-label={`로그아웃 (${user.email})`}
       >
         {busy ? '...' : '로그아웃'}
       </button>
     );
   }
 
-  /* ─── 비로그인 상태: Hard Gate 하에서 보통 도달 안 함 (fallback) ─── */
+  /* ─── 비인증 fallback: pill CTA 로그인 버튼 ──────────────────
+   * Hard Gate 하에서는 이 버튼이 일반적으로 노출되지 않지만,
+   * 로그아웃 직후 LoginPage 로 전환되기 전 짧은 순간 또는
+   * 미래의 Soft Gate 재발의 시 사용 가능하도록 유지. */
   return (
     <button
       onClick={handleSignIn}
       disabled={busy}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         padding: '8px 16px',
         fontSize: 13,
-        fontWeight: 700,
-        background: hover ? PALETTE.primaryHover : PALETTE.primary,
+        fontFamily: 'inherit',
+        fontWeight: 500,
+        background: hovered ? PRIMARY_HOVER : PRIMARY,
         color: 'white',
         border: 'none',
         borderRadius: 9999,
         cursor: busy ? 'not-allowed' : 'pointer',
         opacity: busy ? 0.7 : 1,
-        transition: 'background 200ms',
-        letterSpacing: '0.01em',
-        fontFamily: 'inherit',
-        boxShadow: '0 4px 16px rgba(45, 75, 62, 0.18)',
+        boxShadow: CTA_SHADOW,
+        transition: 'background 200ms ease',
       }}
     >
       {busy ? '로그인 중...' : 'Google 로그인'}
