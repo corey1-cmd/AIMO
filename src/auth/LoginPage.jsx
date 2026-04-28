@@ -89,7 +89,7 @@ export function LoginPage() {
         <div style={styles.card}>
           <div style={styles.brandBlock}>
             <h1 style={styles.brand}>détente</h1>
-            <p style={styles.tagline}>당신의 작은 데탕트.</p>
+            <p style={styles.tagline}>AIMO</p>
           </div>
 
           {inApp ? (
