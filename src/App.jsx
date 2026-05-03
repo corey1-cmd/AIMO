@@ -36,8 +36,8 @@ import { useAuth } from './auth/AuthProvider.jsx';
 
 // 메인 페이지 컴포넌트 (Lenu 가이드 §4 기반)
 import { TodayOverview } from './components/TodayOverview.jsx';
-import { Top3 } from './components/Top3.jsx';
-import { RecentCompleted } from './components/RecentCompleted.jsx';
+import { GoalMemoCard } from './components/GoalMemoCard.jsx';
+import { CalendarPanel } from './components/CalendarPanel.jsx';
 import { ActiveSessionsCard } from './components/ActiveSessionsCard.jsx';
 import { AIMOInfoCard } from './components/AIMOInfoCard.jsx';
 import { RightPanel } from './components/RightPanel.jsx';
@@ -278,18 +278,11 @@ function MainPage({ onNavigate, records, activePlans, activeSessionId, onSelectS
           </SidebarSection>
           <SidebarDivider />
           <SidebarSection padding="20px 24px">
-            <Top3
-              items={top3}
-              onSelect={(id) => onNavigate(`/record/${id}`)}
-            />
+            <GoalMemoCard />
           </SidebarSection>
           <SidebarDivider />
           <SidebarSection padding="20px 24px">
-            <RecentCompleted
-              items={recent}
-              onSelect={(id) => onNavigate(`/record/${id}`)}
-              onSeeAll={() => onNavigate('/record')}
-            />
+            <CalendarPanel onNavigate={onNavigate} />
           </SidebarSection>
           <SidebarDivider />
           <SidebarSection padding="20px 24px">
@@ -560,18 +553,11 @@ function FocusPage({ onNavigate, records, plan, activePlans, activeSessionId, on
           </SidebarSection>
           <SidebarDivider />
           <SidebarSection padding="20px 24px">
-            <Top3
-              items={top3}
-              onSelect={(id) => onNavigate(`/record/${id}`)}
-            />
+            <GoalMemoCard />
           </SidebarSection>
           <SidebarDivider />
           <SidebarSection padding="20px 24px">
-            <RecentCompleted
-              items={recent}
-              onSelect={(id) => onNavigate(`/record/${id}`)}
-              onSeeAll={() => onNavigate('/record')}
-            />
+            <CalendarPanel onNavigate={onNavigate} />
           </SidebarSection>
           <SidebarDivider />
           <SidebarSection padding="20px 24px">
@@ -2172,34 +2158,71 @@ function SettingsPage({ onNavigate, records, savedIds, onClearAll }) {
   const [busy, setBusy] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [locPerm, setLocPerm] = useState('unsupported');
+  // 인라인 상태 메시지 — 'idle' / 'verifying' / 'ok' / { error: string }
+  const [mapsStatus, setMapsStatus] = useState('idle');
+  const [gcalStatus, setGcalStatus] = useState('idle');
 
   useEffect(() => {
     getLocationPermissionState().then(setLocPerm);
   }, []);
 
-  function handleSaveMapsKey() {
-    setMapsApiKey(mapsKey.trim());
-    alert('Google Maps API 키가 저장되었습니다.');
+  // Maps 키 자동 검증 → 저장 (한 번에)
+  async function handleSaveMapsKey() {
+    const key = mapsKey.trim();
+    if (!key) return;
+    setMapsStatus('verifying');
+    // 1. 형식 검증 (Google API 키는 보통 'AIza' 로 시작, 영숫자+-/_, 30~50자)
+    if (!/^AIza[A-Za-z0-9_-]{20,60}$/.test(key)) {
+      setMapsStatus({ error: '키 형식이 올바르지 않습니다 (AIza 로 시작해야 함).' });
+      return;
+    }
+    // 2. 실제 API 호출로 검증 (Geocoding API 가 가장 가벼움)
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=test&key=${encodeURIComponent(key)}`;
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.status === 'REQUEST_DENIED') {
+        setMapsStatus({ error: '키 인증 실패: ' + (json.error_message || '권한이 부여되지 않았습니다.') });
+        return;
+      }
+      if (json.status !== 'OK' && json.status !== 'ZERO_RESULTS') {
+        setMapsStatus({ error: '검증 실패: ' + json.status });
+        return;
+      }
+      // 3. 검증 통과 → 저장
+      setMapsApiKey(key);
+      setMapsStatus('ok');
+    } catch (e) {
+      setMapsStatus({ error: '네트워크 오류: ' + (e?.message || 'fetch failed') });
+    }
   }
   function handleClearMapsKey() {
     if (!confirm('Maps API 키를 삭제하시겠습니까?')) return;
     setMapsApiKey('');
     setMapsKey('');
+    setMapsStatus('idle');
   }
 
-  function handleSaveGcalId() {
-    setGcalClientId(gcalClientId.trim());
-    alert('Calendar 클라이언트 ID 가 저장되었습니다.');
-  }
-  async function handleGcalSignIn() {
-    if (!gcalClientId.trim()) { alert('먼저 클라이언트 ID 를 저장해주세요.'); return; }
+  // Calendar 클라이언트 ID 자동 검증 → OAuth 팝업 자동 실행
+  async function handleSaveAndConnectGcal() {
+    const id = gcalClientId.trim();
+    if (!id) return;
+    setGcalStatus('verifying');
+    // 1. 형식 검증 (Google OAuth client ID 패턴)
+    if (!/^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/i.test(id)) {
+      setGcalStatus({ error: 'ID 형식이 올바르지 않습니다 (xxxx.apps.googleusercontent.com).' });
+      return;
+    }
+    // 2. 저장
+    setGcalClientId(id);
+    // 3. 자동으로 OAuth 흐름 시작
     setBusy(true);
     try {
       await calSignIn();
       setGcalSignedIn(true);
-      alert('Google Calendar 연결됨');
+      setGcalStatus('ok');
     } catch (e) {
-      alert('연결 실패: ' + e.message);
+      setGcalStatus({ error: '연결 실패: ' + (e?.message || 'unknown') });
     } finally {
       setBusy(false);
     }
@@ -2208,6 +2231,7 @@ function SettingsPage({ onNavigate, records, savedIds, onClearAll }) {
     if (!confirm('Google Calendar 연결을 해제하시겠습니까?')) return;
     calSignOut();
     setGcalSignedIn(false);
+    setGcalStatus('idle');
   }
 
   function handleRequestLocation() {
@@ -2215,10 +2239,7 @@ function SettingsPage({ onNavigate, records, savedIds, onClearAll }) {
     getCurrentPosition({ timeout: 8000 }).then((pos) => {
       setBusy(false);
       if (pos) {
-        alert(`위치 권한 허용됨\n위도 ${pos.lat.toFixed(4)}, 경도 ${pos.lng.toFixed(4)}`);
         getLocationPermissionState().then(setLocPerm);
-      } else {
-        alert('위치 권한이 거부되었거나 사용할 수 없습니다.');
       }
     });
   }
@@ -2306,13 +2327,18 @@ function SettingsPage({ onNavigate, records, savedIds, onClearAll }) {
               <input
                 type="password"
                 value={mapsKey}
-                onChange={(e) => setMapsKey(e.target.value)}
+                onChange={(e) => { setMapsKey(e.target.value); setMapsStatus('idle'); }}
                 placeholder="AIza..."
                 style={settingsInputStyle()}
+                disabled={mapsStatus === 'verifying'}
               />
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <SettingsButton primary onClick={handleSaveMapsKey} disabled={!mapsKey.trim()}>
-                  저장
+                <SettingsButton
+                  primary
+                  onClick={handleSaveMapsKey}
+                  disabled={!mapsKey.trim() || mapsStatus === 'verifying'}
+                >
+                  {mapsStatus === 'verifying' ? '검증 중…' : '저장 & 검증'}
                 </SettingsButton>
                 {hasMapsApiKey() && (
                   <SettingsButton onClick={handleClearMapsKey} danger>
@@ -2320,6 +2346,7 @@ function SettingsPage({ onNavigate, records, savedIds, onClearAll }) {
                   </SettingsButton>
                 )}
               </div>
+              <StatusMessage status={mapsStatus} successText="키가 검증되어 저장되었습니다." />
             </SettingsRow>
 
             {/* Google Calendar */}
@@ -2335,17 +2362,19 @@ function SettingsPage({ onNavigate, records, savedIds, onClearAll }) {
               <input
                 type="text"
                 value={gcalClientId}
-                onChange={(e) => setGcalClientIdState(e.target.value)}
+                onChange={(e) => { setGcalClientIdState(e.target.value); setGcalStatus('idle'); }}
                 placeholder="OAuth 2.0 클라이언트 ID (xxxxxxxxxx.apps.googleusercontent.com)"
                 style={settingsInputStyle()}
+                disabled={busy || gcalStatus === 'verifying'}
               />
               <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                <SettingsButton primary onClick={handleSaveGcalId} disabled={!gcalClientId.trim()}>
-                  ID 저장
-                </SettingsButton>
                 {!gcalSignedIn ? (
-                  <SettingsButton onClick={handleGcalSignIn} disabled={busy || !hasGcalClientId()}>
-                    Google 로그인
+                  <SettingsButton
+                    primary
+                    onClick={handleSaveAndConnectGcal}
+                    disabled={!gcalClientId.trim() || busy || gcalStatus === 'verifying'}
+                  >
+                    {busy ? '연결 중…' : gcalStatus === 'verifying' ? '확인 중…' : '저장 & 연결'}
                   </SettingsButton>
                 ) : (
                   <SettingsButton onClick={handleGcalSignOut} danger>
@@ -2353,6 +2382,7 @@ function SettingsPage({ onNavigate, records, savedIds, onClearAll }) {
                   </SettingsButton>
                 )}
               </div>
+              <StatusMessage status={gcalStatus} successText="Google Calendar 연결됨." />
               <div style={{ fontSize: 11, color: T.color.textMuted, marginTop: 10, lineHeight: 1.6 }}>
                 ⚠️ OAuth 클라이언트 설정 시 승인된 JavaScript 원본에 <code style={{ background: 'rgba(0,82,45,0.06)', padding: '1px 5px', borderRadius: 4 }}>{typeof window !== 'undefined' ? window.location.origin : ''}</code> 를 추가해야 합니다.
               </div>
@@ -2509,6 +2539,47 @@ function SettingsButton({ children, onClick, primary, danger, disabled }) {
   }}>{children}</button>;
 }
 
+function StatusMessage({ status, successText }) {
+  if (status === 'idle' || status === 'verifying') return null;
+  if (status === 'ok') {
+    return (
+      <div style={{
+        marginTop: 10,
+        padding: '8px 12px',
+        background: 'rgba(0, 82, 45, 0.06)',
+        border: '1px solid rgba(0, 82, 45, 0.16)',
+        borderRadius: 8,
+        fontSize: 11.5,
+        color: T.color.primary,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      }}>
+        <span aria-hidden>✓</span>
+        {successText || '확인 완료'}
+      </div>
+    );
+  }
+  if (status && typeof status === 'object' && status.error) {
+    return (
+      <div style={{
+        marginTop: 10,
+        padding: '8px 12px',
+        background: 'rgba(196, 73, 73, 0.06)',
+        border: '1px solid rgba(196, 73, 73, 0.20)',
+        borderRadius: 8,
+        fontSize: 11.5,
+        color: '#A8602F',
+        lineHeight: 1.5,
+      }}>
+        <span aria-hidden style={{ marginRight: 6 }}>⚠</span>
+        {status.error}
+      </div>
+    );
+  }
+  return null;
+}
+
 function settingsInputStyle() {
   return {
     width: '100%',
@@ -2562,14 +2633,10 @@ function LearningPage({ onNavigate, records, activePlans, activeSessionId, onSel
           <BoxLightDark />
           <SidebarSection padding="22px 24px 20px"><TodayOverview stats={stats} /></SidebarSection>
           <SidebarDivider />
-          <SidebarSection padding="20px 24px"><Top3 items={top3} onSelect={(id) => onNavigate(`/record/${id}`)} /></SidebarSection>
+          <SidebarSection padding="20px 24px"><GoalMemoCard /></SidebarSection>
           <SidebarDivider />
           <SidebarSection padding="20px 24px">
-            <RecentCompleted
-              items={recent}
-              onSelect={(id) => onNavigate(`/record/${id}`)}
-              onSeeAll={() => onNavigate('/record')}
-            />
+            <CalendarPanel onNavigate={onNavigate} />
           </SidebarSection>
           <SidebarDivider />
           <SidebarSection padding="20px 24px"><ActiveSessionsCard sessions={activePlans} activeId={activeSessionId} onSelect={onSelectSession} /></SidebarSection>
